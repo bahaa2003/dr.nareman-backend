@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
@@ -6,7 +7,7 @@ import { Types } from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import sharp from "sharp";
 import request, { type SuperAgentTest } from "supertest";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { app } from "../src/app.js";
 import { env } from "../src/config/env.js";
@@ -17,6 +18,7 @@ import { AdminSessionModel } from "../src/modules/adminAuth/session.model.js";
 import { ArticleModel } from "../src/modules/articles/article.model.js";
 import { createArticle } from "../src/modules/articles/article.service.js";
 import { localMediaStorage } from "../src/modules/media/localMediaStorage.js";
+import { articleVideoUploadMaxBytes } from "../src/modules/media/localMediaStorage.js";
 
 let mongoMemoryServer: MongoMemoryServer | undefined;
 
@@ -58,6 +60,22 @@ function coverFilePath(url: string): string {
   return join(localMediaStorage.articleDirectory, basename(url));
 }
 
+function videoFilePath(url: string): string {
+  return join(localMediaStorage.articleVideoDirectory, basename(url));
+}
+
+function makeMp4(): Buffer {
+  const video = Buffer.alloc(16);
+  video.writeUInt32BE(16, 0);
+  video.write("ftyp", 4, "ascii");
+  video.write("isom", 8, "ascii");
+  return video;
+}
+
+function makeWebm(): Buffer {
+  return Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42, 0x86, 0x81, 0x01]);
+}
+
 async function expectFileMissing(path: string): Promise<void> {
   await expect(stat(path)).rejects.toMatchObject({ code: "ENOENT" });
 }
@@ -97,7 +115,12 @@ describe("article cover media API", () => {
         .field("alt", "Cover image")
         .attach("image", image, "cover.jpg"),
       request(app).patch(`/api/admin/articles/${articleId}/cover-image`).send({ alt: "Cover image" }),
-      request(app).delete(`/api/admin/articles/${articleId}/cover-image`)
+      request(app).delete(`/api/admin/articles/${articleId}/cover-image`),
+      request(app).post(`/api/admin/articles/${articleId}/videos`).attach("video", makeMp4(), {
+        filename: "video.mp4",
+        contentType: "video/mp4"
+      }),
+      request(app).delete(`/api/admin/articles/${articleId}/videos/${randomUUID()}`)
     ]);
 
     responses.forEach((response) => expect(response.status).toBe(401));
@@ -296,12 +319,103 @@ describe("article cover media API", () => {
     await expect(readFile(externalFile, "utf8")).resolves.toBe("must remain");
     await rm(externalDirectory, { recursive: true, force: true });
   });
+
+  it("accepts signature-validated videos with generated managed URLs and serves byte ranges", async () => {
+    const agent = await authenticatedAgent();
+    const article = await createArticle({ ...baseArticle, title: "Article video", status: "published" });
+    const upload = await agent
+      .post(`/api/admin/articles/${article.id}/videos`)
+      .attach("video", makeMp4(), { filename: "client supplied name.mp4", contentType: "video/mp4" });
+
+    expect(upload.status).toBe(201);
+    expect(upload.body.article.videos).toHaveLength(1);
+    expect(upload.body.article.videos[0]).toMatchObject({
+      id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      url: expect.stringMatching(/^\/uploads\/articles\/videos\/[0-9a-f-]{36}\.mp4$/),
+      originalName: "client supplied name.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 16,
+      createdAt: expect.any(String)
+    });
+    expect(upload.body.article.videos[0]).not.toHaveProperty("path");
+    await expect(stat(videoFilePath(upload.body.article.videos[0].url))).resolves.toBeDefined();
+
+    const webmUpload = await agent
+      .post(`/api/admin/articles/${article.id}/videos`)
+      .attach("video", makeWebm(), { filename: "second.webm", contentType: "video/webm" });
+    expect(webmUpload.status).toBe(201);
+    expect(webmUpload.body.article.videos[1]).toMatchObject({ mimeType: "video/webm" });
+
+    const ranged = await request(app).get(upload.body.article.videos[0].url).set("Range", "bytes=0-3");
+    expect(ranged.status).toBe(206);
+    expect(ranged.headers["content-range"]).toBe("bytes 0-3/16");
+    expect(ranged.headers["content-type"]).toContain("video/mp4");
+
+    const publicArticle = await request(app).get(`/api/articles/${article.slug}`);
+    expect(publicArticle.status).toBe(200);
+    expect(publicArticle.body.article.videos[0]).toMatchObject({ url: upload.body.article.videos[0].url });
+    expect(JSON.stringify(publicArticle.body.article.videos[0])).not.toContain(localMediaStorage.articleDirectory);
+  });
+
+  it("rejects unsupported video content, keeps the exact 1 GiB limit, and leaves no temporary file", async () => {
+    const agent = await authenticatedAgent();
+    const article = await createArticle({ ...baseArticle, title: "Rejected video" });
+    const rejected = await agent
+      .post(`/api/admin/articles/${article.id}/videos`)
+      .attach("video", Buffer.from("not a video"), { filename: "fake.mp4", contentType: "video/mp4" });
+
+    expect(articleVideoUploadMaxBytes).toBe(1_073_741_824);
+    expect(rejected.status).toBe(415);
+    expect((await ArticleModel.findById(article.id))?.videos).toEqual([]);
+    expect(await readdir(localMediaStorage.articleVideoTemporaryDirectory)).toEqual([]);
+  });
+
+  it("removes a video from the Article and disk, and cleans all videos when the Article is deleted", async () => {
+    const agent = await authenticatedAgent();
+    const article = await createArticle({ ...baseArticle, title: "Video cleanup" });
+    const firstUpload = await agent
+      .post(`/api/admin/articles/${article.id}/videos`)
+      .attach("video", makeMp4(), { filename: "first.mp4", contentType: "video/mp4" });
+    const first = firstUpload.body.article.videos[0] as { id: string; url: string };
+    const firstPath = videoFilePath(first.url);
+    const removal = await agent.delete(`/api/admin/articles/${article.id}/videos/${first.id}`);
+
+    expect(removal.status).toBe(200);
+    expect(removal.body.article.videos).toEqual([]);
+    await expectFileMissing(firstPath);
+
+    const secondUpload = await agent
+      .post(`/api/admin/articles/${article.id}/videos`)
+      .attach("video", makeMp4(), { filename: "second.mp4", contentType: "video/mp4" });
+    const second = secondUpload.body.article.videos[0] as { url: string };
+    const secondPath = videoFilePath(second.url);
+    const deletion = await agent.delete(`/api/admin/articles/${article.id}`);
+
+    expect(deletion.status).toBe(204);
+    await expectFileMissing(secondPath);
+  });
+
+  it("removes a newly promoted video if Article persistence fails", async () => {
+    const agent = await authenticatedAgent();
+    const article = await createArticle({ ...baseArticle, title: "Video persistence failure" });
+    const saveSpy = vi.spyOn(ArticleModel.prototype, "save").mockRejectedValueOnce(new Error("database unavailable"));
+
+    try {
+      const upload = await agent
+        .post(`/api/admin/articles/${article.id}/videos`)
+        .attach("video", makeMp4(), { filename: "will-be-cleaned.mp4", contentType: "video/mp4" });
+
+      expect(upload.status).toBe(500);
+      expect(await readdir(localMediaStorage.articleVideoDirectory)).toEqual([".tmp"]);
+    } finally {
+      saveSpy.mockRestore();
+    }
+  });
 });
 
 async function readDirectory(): Promise<string[]> {
   try {
-    const { readdir } = await import("node:fs/promises");
-    return await readdir(localMediaStorage.articleDirectory);
+    return (await readdir(localMediaStorage.articleDirectory)).filter((entry) => entry !== "videos");
   } catch (error) {
     if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
       return [];

@@ -40,9 +40,13 @@ export const errorHandler: ErrorRequestHandler = (error, request, response, _nex
         : isPayloadTooLarge
           ? "Request body is too large"
       : isMulterError && error.code === "LIMIT_FILE_SIZE"
-        ? "Image file is too large"
-        : isMulterError
-          ? "Invalid image upload"
+        ? request.originalUrl.includes("/videos")
+          ? "Video file exceeds the 1 GiB limit"
+          : "Image file is too large"
+      : isMulterError
+          ? request.originalUrl.includes("/videos")
+            ? "Invalid video upload"
+            : "Invalid image upload"
           : isMongooseValidationError
             ? "Invalid request data"
             : isMongooseCastError

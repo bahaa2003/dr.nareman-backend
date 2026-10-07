@@ -111,6 +111,11 @@ export const articleIdParamsSchema = z.strictObject({
   id: articleIdSchema
 });
 
+export const articleVideoParamsSchema = z.strictObject({
+  id: articleIdSchema,
+  videoId: z.string().uuid("Invalid video id")
+});
+
 export type CreateArticleInput = z.infer<typeof createArticleSchema>;
 export type UpdateArticleInput = z.infer<typeof updateArticleSchema>;
 export type CoverImageAltInput = z.infer<typeof coverImageAltSchema>;
@@ -118,3 +123,4 @@ export type PublicArticleListQuery = z.infer<typeof publicArticleListQuerySchema
 export type PublicArticleSlugParams = z.infer<typeof publicArticleSlugParamsSchema>;
 export type AdminArticleListQuery = z.infer<typeof adminArticleListQuerySchema>;
 export type ArticleIdParams = z.infer<typeof articleIdParamsSchema>;
+export type ArticleVideoParams = z.infer<typeof articleVideoParamsSchema>;

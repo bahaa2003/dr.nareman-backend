@@ -9,6 +9,19 @@ export interface CoverImageReference {
   alt: string;
 }
 
+export interface ArticleVideoReference {
+  id: string;
+  url: string;
+  originalName: string;
+  mimeType: "video/mp4" | "video/webm";
+  sizeBytes: number;
+  createdAt: Date;
+}
+
+export interface SafeArticleVideoReference extends Omit<ArticleVideoReference, "createdAt"> {
+  createdAt: string;
+}
+
 export interface Article {
   title: string;
   slug: string;
@@ -19,6 +32,7 @@ export interface Article {
   publishedAt: Date | null;
   readingTime: number;
   coverImage: CoverImageReference | null;
+  videos: ArticleVideoReference[];
   seoTitle?: string | null;
   seoDescription?: string | null;
   createdAt: Date;
@@ -40,6 +54,7 @@ export interface SafeArticle {
   publishedAt: string | null;
   readingTime: number;
   coverImage: CoverImageReference | null;
+  videos: SafeArticleVideoReference[];
   seoTitle: string | null;
   seoDescription: string | null;
   createdAt: string;
@@ -56,6 +71,7 @@ export interface ArticleListItem {
   publishedAt: string;
   readingTime: number;
   coverImage: CoverImageReference | null;
+  videos: SafeArticleVideoReference[];
   seoTitle: string | null;
   seoDescription: string | null;
 }
@@ -86,6 +102,7 @@ export interface AdminArticleListItem {
   publishedAt: string | null;
   readingTime: number;
   coverImage: CoverImageReference | null;
+  videos: SafeArticleVideoReference[];
   seoTitle: string | null;
   seoDescription: string | null;
   createdAt: string;

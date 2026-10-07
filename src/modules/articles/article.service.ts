@@ -40,6 +40,14 @@ export function toSafeArticle(article: ArticlePersistenceShape): SafeArticle {
     coverImage: article.coverImage
       ? { url: article.coverImage.url, alt: article.coverImage.alt }
       : null,
+    videos: (article.videos ?? []).map((video) => ({
+      id: video.id,
+      url: video.url,
+      originalName: video.originalName,
+      mimeType: video.mimeType,
+      sizeBytes: video.sizeBytes,
+      createdAt: video.createdAt.toISOString()
+    })),
     seoTitle: article.seoTitle ?? null,
     seoDescription: article.seoDescription ?? null,
     createdAt: article.createdAt.toISOString(),
@@ -64,6 +72,7 @@ export function toArticleListItem(article: ArticlePersistenceShape): ArticleList
     publishedAt: safeArticle.publishedAt,
     readingTime: safeArticle.readingTime,
     coverImage: safeArticle.coverImage,
+    videos: safeArticle.videos,
     seoTitle: safeArticle.seoTitle,
     seoDescription: safeArticle.seoDescription
   };

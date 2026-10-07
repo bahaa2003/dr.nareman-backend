@@ -7,6 +7,15 @@ import { initializeMediaStorage } from "./modules/media/localMediaStorage.js";
 import { logger } from "./utils/logger.js";
 
 const server = http.createServer(app);
+
+// Node's default request timeout is five minutes, which can end a legitimate
+// disk-streamed 1 GiB upload on a slow connection. Keep header and idle
+// keep-alive defenses at their conservative defaults; only the total request
+// receive window is extended for the upload contract.
+server.requestTimeout = 60 * 60 * 1_000;
+server.headersTimeout = 60 * 1_000;
+server.keepAliveTimeout = 5 * 1_000;
+
 let isShuttingDown = false;
 
 function shutdown(signal: string, exitCode: number): void {

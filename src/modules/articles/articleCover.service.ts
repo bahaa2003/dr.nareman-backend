@@ -4,6 +4,7 @@ import { ArticleModel } from "./article.model.js";
 import { deleteArticle, toSafeArticle } from "./article.service.js";
 import type { SafeArticle } from "./article.types.js";
 import { localMediaStorage } from "../media/localMediaStorage.js";
+import { cleanupArticleVideos } from "./articleVideo.service.js";
 
 export async function replaceArticleCover(
   articleId: string,
@@ -57,12 +58,15 @@ export async function removeArticleCover(articleId: string): Promise<SafeArticle
   return toSafeArticle(article);
 }
 
-export async function deleteArticleWithCoverCleanup(articleId: string): Promise<void> {
+export async function deleteArticleWithMediaCleanup(articleId: string): Promise<void> {
   const deletedArticle = await deleteArticle(articleId);
 
-  if (deletedArticle.coverImage?.url) {
-    await cleanupPreviousMedia(deletedArticle.coverImage.url, "article deletion");
-  }
+  await Promise.all([
+    ...(deletedArticle.coverImage?.url
+      ? [cleanupPreviousMedia(deletedArticle.coverImage.url, "article deletion")]
+      : []),
+    cleanupArticleVideos(deletedArticle.videos)
+  ]);
 }
 
 async function findArticle(articleId: string) {

@@ -3,11 +3,13 @@ import { Router } from "express";
 import { requireAdmin } from "../adminAuth/requireAdmin.middleware.js";
 import { validateBody, validateParams, validateQuery } from "../../middleware/validate.middleware.js";
 import { coverImageUpload } from "./articleCover.upload.js";
+import { articleVideoUpload } from "./articleVideo.upload.js";
 import {
   deleteArticleCover,
   replaceArticleCover,
   updateArticleCoverAlt
 } from "./articleCover.controller.js";
+import { deleteArticleVideo, uploadArticleVideo } from "./articleVideo.controller.js";
 import {
   createAdminArticle,
   deleteAdminArticle,
@@ -20,6 +22,7 @@ import {
   adminCreateArticleSchema,
   adminUpdateArticleSchema,
   articleIdParamsSchema,
+  articleVideoParamsSchema,
   coverImageAltSchema
 } from "./article.schema.js";
 
@@ -33,6 +36,17 @@ adminArticleRouter.put(
   coverImageUpload.single("image"),
   validateBody(coverImageAltSchema),
   replaceArticleCover
+);
+adminArticleRouter.post(
+  "/:id/videos",
+  validateParams(articleIdParamsSchema),
+  articleVideoUpload.single("video"),
+  uploadArticleVideo
+);
+adminArticleRouter.delete(
+  "/:id/videos/:videoId",
+  validateParams(articleVideoParamsSchema),
+  deleteArticleVideo
 );
 adminArticleRouter.patch(
   "/:id/cover-image",

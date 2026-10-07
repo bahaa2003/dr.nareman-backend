@@ -12,7 +12,7 @@ import {
   listAdminArticles,
   updateArticle
 } from "./article.service.js";
-import { deleteArticleWithCoverCleanup } from "./articleCover.service.js";
+import { deleteArticleWithMediaCleanup } from "./articleCover.service.js";
 
 export const listAdminArticlesController: RequestHandler = async (_request, response, next) => {
   try {
@@ -55,7 +55,7 @@ export const updateAdminArticle: RequestHandler = async (request, response, next
 export const deleteAdminArticle: RequestHandler = async (_request, response, next) => {
   try {
     const { id } = response.locals.validatedParams as ArticleIdParams;
-    await deleteArticleWithCoverCleanup(id);
+    await deleteArticleWithMediaCleanup(id);
     response.status(204).send();
   } catch (error) {
     next(error);

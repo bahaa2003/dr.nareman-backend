@@ -44,7 +44,7 @@ export const openApiDocument = {
     { name: "Admin Authentication", description: "Admin cookie-session authentication." },
     { name: "Public Articles", description: "Published Article content only." },
     { name: "Admin Articles", description: "Authenticated Article content management." },
-    { name: "Article Media", description: "Authenticated Article cover-image management." },
+    { name: "Article Media", description: "Authenticated Article cover-image and video management." },
     { name: "Public Testimonials", description: "Visible, privacy-confirmed testimonial screenshots only." },
     { name: "Admin Testimonials", description: "Authenticated testimonial screenshot management." },
     { name: "Public Leads", description: "Privacy-notice accepted marketing lead capture." },
@@ -386,7 +386,7 @@ export const openApiDocument = {
         operationId: "deleteAdminArticle",
         summary: "Hard-delete an Article",
         description:
-          "Permanently deletes the Article. If it references managed local cover media, cleanup is attempted after the database document is deleted.",
+          "Permanently deletes the Article. Managed local cover media and video files are cleaned up after the database document is deleted.",
         security: adminSecurity,
         parameters: [articleIdParameter],
         responses: {
@@ -486,6 +486,44 @@ export const openApiDocument = {
           "401": errorResponse("Missing, expired, revoked, or inactive Admin session."),
           "403": errorResponse("Untrusted browser Origin for an unsafe Admin request."),
           "404": errorResponse("Article not found."),
+          ...internalServerError
+        }
+      }
+    },
+    "/api/admin/articles/{id}/videos": {
+      post: {
+        tags: ["Article Media"],
+        operationId: "uploadArticleVideo",
+        summary: "Upload one Article video",
+        description: "Streams one MP4 or WebM upload to managed disk storage. The per-file limit is exactly 1 GiB. The server checks the declared MIME type and container signature, but does not perform codec validation or transcoding.",
+        security: adminSecurity,
+        parameters: [articleIdParameter],
+        requestBody: { required: true, content: { "multipart/form-data": { schema: { $ref: "#/components/schemas/ArticleVideoUploadInput" } } } },
+        responses: {
+          "201": { description: "Updated Article with safe video metadata.", content: { "application/json": { schema: { $ref: "#/components/schemas/ArticleDetailResponse" } } } },
+          "400": errorResponse("Missing video or malformed Article ObjectId."),
+          "401": errorResponse("Missing, expired, revoked, or inactive Admin session."),
+          "403": errorResponse("Untrusted browser Origin for an unsafe Admin request."),
+          "404": errorResponse("Article not found."),
+          "413": errorResponse("Video file exceeds the 1 GiB limit."),
+          "415": errorResponse("Unsupported MIME type or invalid MP4/WebM container signature."),
+          ...internalServerError
+        }
+      }
+    },
+    "/api/admin/articles/{id}/videos/{videoId}": {
+      delete: {
+        tags: ["Article Media"],
+        operationId: "deleteArticleVideo",
+        summary: "Remove an Article video",
+        security: adminSecurity,
+        parameters: [articleIdParameter, { name: "videoId", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        responses: {
+          "200": { description: "Updated Article.", content: { "application/json": { schema: { $ref: "#/components/schemas/ArticleDetailResponse" } } } },
+          "400": errorResponse("Malformed Article or video id."),
+          "401": errorResponse("Missing, expired, revoked, or inactive Admin session."),
+          "403": errorResponse("Untrusted browser Origin for an unsafe Admin request."),
+          "404": errorResponse("Article or Article video not found."),
           ...internalServerError
         }
       }
@@ -706,6 +744,19 @@ export const openApiDocument = {
           alt: { type: "string", minLength: 1, maxLength: 180, example: "صورة توضيحية لمتابعة التبويض" }
         }
       },
+      ArticleVideo: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "url", "originalName", "mimeType", "sizeBytes", "createdAt"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          url: { type: "string", pattern: "^/uploads/articles/videos/[0-9a-f-]{36}\\.(mp4|webm)$", description: "Generated managed public media URL; no filesystem path is exposed." },
+          originalName: { type: "string", maxLength: 255 },
+          mimeType: { type: "string", enum: ["video/mp4", "video/webm"] },
+          sizeBytes: { type: "integer", minimum: 1, maximum: 1073741824 },
+          createdAt: { type: "string", format: "date-time" }
+        }
+      },
       ArticleListItem: {
         type: "object",
         additionalProperties: false,
@@ -719,6 +770,7 @@ export const openApiDocument = {
           "publishedAt",
           "readingTime",
           "coverImage",
+          "videos",
           "seoTitle",
           "seoDescription"
         ],
@@ -732,6 +784,7 @@ export const openApiDocument = {
           publishedAt: { type: "string", format: "date-time" },
           readingTime: { type: "integer", minimum: 1 },
           coverImage: { anyOf: [{ $ref: "#/components/schemas/ArticleCoverImage" }, { type: "null" }] },
+          videos: { type: "array", items: { $ref: "#/components/schemas/ArticleVideo" } },
           seoTitle: { type: ["string", "null"] },
           seoDescription: { type: ["string", "null"] }
         }
@@ -749,6 +802,7 @@ export const openApiDocument = {
           "publishedAt",
           "readingTime",
           "coverImage",
+          "videos",
           "seoTitle",
           "seoDescription",
           "createdAt",
@@ -764,6 +818,7 @@ export const openApiDocument = {
           publishedAt: { type: ["string", "null"], format: "date-time" },
           readingTime: { type: "integer", minimum: 1 },
           coverImage: { anyOf: [{ $ref: "#/components/schemas/ArticleCoverImage" }, { type: "null" }] },
+          videos: { type: "array", items: { $ref: "#/components/schemas/ArticleVideo" } },
           seoTitle: { type: ["string", "null"] },
           seoDescription: { type: ["string", "null"] },
           createdAt: { type: "string", format: "date-time" },
@@ -784,6 +839,7 @@ export const openApiDocument = {
           "publishedAt",
           "readingTime",
           "coverImage",
+          "videos",
           "seoTitle",
           "seoDescription",
           "createdAt",
@@ -804,6 +860,7 @@ export const openApiDocument = {
           publishedAt: { type: ["string", "null"], format: "date-time" },
           readingTime: { type: "integer", minimum: 1 },
           coverImage: { anyOf: [{ $ref: "#/components/schemas/ArticleCoverImage" }, { type: "null" }] },
+          videos: { type: "array", items: { $ref: "#/components/schemas/ArticleVideo" } },
           seoTitle: { type: ["string", "null"] },
           seoDescription: { type: ["string", "null"] },
           createdAt: { type: "string", format: "date-time" },
@@ -899,6 +956,14 @@ export const openApiDocument = {
         required: ["alt"],
         properties: {
           alt: { type: "string", minLength: 1, maxLength: 180 }
+        }
+      },
+      ArticleVideoUploadInput: {
+        type: "object",
+        additionalProperties: false,
+        required: ["video"],
+        properties: {
+          video: { type: "string", format: "binary", description: "One MP4 or WebM video. Maximum individual size: 1,073,741,824 bytes (1 GiB)." }
         }
       },
       LeadSource: { type: "string", enum: ["ovulation_calculator", "weekly_live"] },

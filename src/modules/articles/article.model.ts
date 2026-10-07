@@ -1,6 +1,11 @@
 import mongoose, { type HydratedDocument, type Model, Schema } from "mongoose";
 
-import { articleStatuses, type Article, type CoverImageReference } from "./article.types.js";
+import {
+  articleStatuses,
+  type Article,
+  type ArticleVideoReference,
+  type CoverImageReference
+} from "./article.types.js";
 
 export type ArticleDocument = HydratedDocument<Article>;
 
@@ -16,6 +21,21 @@ const coverImageSchema = new Schema<CoverImageReference>(
       required: true,
       trim: true
     }
+  },
+  {
+    _id: false,
+    id: false
+  }
+);
+
+const articleVideoSchema = new Schema<ArticleVideoReference>(
+  {
+    id: { type: String, required: true, trim: true },
+    url: { type: String, required: true, trim: true },
+    originalName: { type: String, required: true, trim: true, maxlength: 255 },
+    mimeType: { type: String, required: true, enum: ["video/mp4", "video/webm"] },
+    sizeBytes: { type: Number, required: true, min: 1 },
+    createdAt: { type: Date, required: true, default: () => new Date() }
   },
   {
     _id: false,
@@ -74,6 +94,10 @@ const articleSchema = new Schema<Article>(
     coverImage: {
       type: coverImageSchema,
       default: null
+    },
+    videos: {
+      type: [articleVideoSchema],
+      default: []
     },
     seoTitle: {
       type: String,
