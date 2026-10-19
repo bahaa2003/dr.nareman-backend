@@ -95,15 +95,14 @@ export async function submitQuestion(weeklyLiveId: string, input: PublicQuestion
     region: input.region,
     city: input.city,
     source: "weekly_live",
-    privacyNoticeAccepted: true,
-    marketingConsent: input.marketingConsent,
+    marketingConsent: false,
     ...(input.attribution === undefined ? {} : { attribution: input.attribution })
   });
 
   let question;
   try {
     question = await WeeklyLiveQuestionModel.create({
-      weeklyLiveId: live._id, leadId: new Types.ObjectId(lead.id), displayName: input.displayName, age: input.age, region: input.region, city: input.city,
+      weeklyLiveId: live._id, leadId: new Types.ObjectId(lead.id), displayName: displayNameFromContactName(input.contactName), age: input.age, region: input.region, city: input.city,
       question: input.question, consentAt: new Date(), privacyNoticeVersion
     });
   } catch (error) {
@@ -123,6 +122,11 @@ export async function submitQuestion(weeklyLiveId: string, input: PublicQuestion
 
 function getErrorName(error: unknown): string {
   return error instanceof Error ? error.name : "UnknownError";
+}
+
+function displayNameFromContactName(contactName: string): string {
+  const displayName = contactName.trim().split(/\s+/u)[0];
+  return displayName ? displayName.slice(0, 80) : "ضيف";
 }
 
 export async function listWeeklyLiveQuestions(weeklyLiveId: string, input: AdminQuestionListQuery) {

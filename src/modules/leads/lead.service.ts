@@ -8,6 +8,7 @@ import type { AdminLeadExportInput, AdminLeadListInput, LeadAttribution, LeadPer
 export function toSafeAdminLead(lead: LeadPersistenceShape): SafeAdminLead {
   const attribution = lead.attribution;
   const clickIds = attribution?.clickIds;
+  const ovulationCalculator = lead.healthContext?.ovulationCalculator;
 
   return {
     id: lead._id.toString(),
@@ -29,6 +30,18 @@ export function toSafeAdminLead(lead: LeadPersistenceShape): SafeAdminLead {
         msclkid: clickIds?.msclkid ?? null
       }
     },
+    healthContext: {
+      ovulationCalculator: ovulationCalculator ? {
+        lastPeriodStart: ovulationCalculator.lastPeriodStart,
+        cycleLength: ovulationCalculator.cycleLength,
+        estimatedOvulation: ovulationCalculator.estimatedOvulation,
+        fertileWindowStart: ovulationCalculator.fertileWindowStart,
+        fertileWindowEnd: ovulationCalculator.fertileWindowEnd,
+        estimatedNextPeriod: ovulationCalculator.estimatedNextPeriod,
+        calculatedAt: ovulationCalculator.calculatedAt.toISOString(),
+        calculationVersion: ovulationCalculator.calculationVersion
+      } : null
+    },
     privacyNoticeAcceptedAt: lead.privacyNoticeAcceptedAt.toISOString(),
     marketingConsent: lead.marketingConsent,
     marketingConsentAt: lead.marketingConsentAt?.toISOString() ?? null,
@@ -42,14 +55,16 @@ export async function createLead(input: CreateLeadInput): Promise<{ id: string }
   const now = new Date();
   const location = omitEmptyObject({ region: input.region, city: input.city });
   const attribution = normalizeAttribution(input.attribution);
+  const ovulationCalculator = input.healthContext?.ovulationCalculator;
   const leadData = {
     contact: { name: input.name, phone: input.phone, ...(input.email === undefined ? {} : { email: input.email }) },
     ...(location === undefined ? {} : { location }),
     source: input.source,
     ...(attribution === undefined ? {} : { attribution }),
+    ...(ovulationCalculator === undefined ? {} : { healthContext: { ovulationCalculator: { ...ovulationCalculator, calculatedAt: now, calculationVersion: "v1" } } }),
     privacyNoticeAcceptedAt: now,
-    marketingConsent: input.marketingConsent,
-    marketingConsentAt: input.marketingConsent ? now : null,
+    marketingConsent: false,
+    marketingConsentAt: null,
     status: "new"
   } as unknown as LeadPersistenceShape;
   const lead = await LeadModel.create(leadData);

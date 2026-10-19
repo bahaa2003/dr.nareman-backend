@@ -14,6 +14,11 @@ export const leadOptionalEmailSchema = z
   .pipe(z.string().email().max(254).optional());
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, "Invalid lead id").refine(isValidObjectId, "Invalid lead id");
 const dateInput = z.coerce.date().refine((value) => !Number.isNaN(value.getTime()), "Invalid date");
+const calendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, "Invalid calendar date").refine((value) => {
+  const [year = Number.NaN, month = Number.NaN, day = Number.NaN] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}, "Invalid calendar date");
 
 function positiveIntegerQuery(maximum: number) {
   return z.string().regex(/^[1-9]\d*$/, "Must be a positive integer").transform(Number).pipe(z.number().int().min(1).max(maximum));
@@ -76,6 +81,20 @@ export const leadAttributionSchema = z.strictObject({
     .optional()
 });
 
+const ovulationCalculatorHealthContextSchema = z.strictObject({
+  lastPeriodStart: calendarDate,
+  cycleLength: z.number().int().min(21).max(35),
+  estimatedOvulation: calendarDate,
+  fertileWindowStart: calendarDate,
+  fertileWindowEnd: calendarDate,
+  estimatedNextPeriod: calendarDate
+}).superRefine((value, context) => {
+  const expected = expectedOvulationDates(value.lastPeriodStart, value.cycleLength);
+  (Object.keys(expected) as Array<keyof typeof expected>).forEach((field) => {
+    if (value[field] !== expected[field]) context.addIssue({ code: "custom", path: [field], message: "Calculated date does not match the submitted cycle" });
+  });
+});
+
 export const createLeadSchema = z.strictObject({
   name: nonEmptyString(100),
   phone: leadPhoneInputSchema,
@@ -84,8 +103,12 @@ export const createLeadSchema = z.strictObject({
   city: optionalText(100).optional(),
   source: z.enum(leadSources),
   attribution: leadAttributionSchema.optional(),
-  privacyNoticeAccepted: z.literal(true),
-  marketingConsent: z.boolean()
+  healthContext: z.strictObject({ ovulationCalculator: ovulationCalculatorHealthContextSchema }).optional(),
+  marketingConsent: z.literal(false).optional().default(false)
+}).superRefine((value, context) => {
+  if (value.healthContext && value.source !== "ovulation_calculator") {
+    context.addIssue({ code: "custom", path: ["healthContext"], message: "Health context is only supported for ovulation calculator leads" });
+  }
 });
 
 export const leadIdParamsSchema = z.strictObject({ id: objectId });
@@ -127,3 +150,20 @@ export type LeadIdParams = z.infer<typeof leadIdParamsSchema>;
 export type UpdateLeadStatusInput = z.infer<typeof updateLeadStatusSchema>;
 export type AdminLeadListQuery = z.infer<typeof adminLeadListQuerySchema>;
 export type AdminLeadExportQuery = z.infer<typeof adminLeadExportQuerySchema>;
+
+function expectedOvulationDates(lastPeriodStart: string, cycleLength: number) {
+  const addDays = (value: string, days: number) => {
+    const [year = Number.NaN, month = Number.NaN, day = Number.NaN] = value.split("-").map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+  };
+  const estimatedNextPeriod = addDays(lastPeriodStart, cycleLength);
+  const estimatedOvulation = addDays(estimatedNextPeriod, -14);
+  return {
+    fertileWindowStart: addDays(estimatedOvulation, -5),
+    fertileWindowEnd: estimatedOvulation,
+    estimatedOvulation,
+    estimatedNextPeriod
+  };
+}

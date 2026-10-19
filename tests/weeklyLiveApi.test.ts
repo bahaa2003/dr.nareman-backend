@@ -26,26 +26,20 @@ const questionInput = {
   contactName: "سارة للتواصل",
   phone: "٠٥٠ ١٢٣ ٤٥٦٧",
   email: "sara@example.test",
-  displayName: "سارة",
   age: 29,
   region: "Riyadh",
   city: "Riyadh",
   question: "ما النصائح العامة للتحضير لموعد متابعة الخصوبة؟",
-  consent: true,
-  privacyNoticeAccepted: true,
-  marketingConsent: false,
   attribution: { utmSource: "paid", utmCampaign: "weekly-october", landingPath: "/weekly-live", clickIds: { fbclid: "safe-click" } }
 };
 const {
   contactName: _contactName,
   phone: _phone,
   email: _email,
-  privacyNoticeAccepted: _privacyNoticeAccepted,
-  marketingConsent: _marketingConsent,
   attribution: _attribution,
-  consent: _consent,
-  ...questionFields
+  ...questionFieldsWithoutDisplay
 } = questionInput;
+const questionFields = { ...questionFieldsWithoutDisplay, displayName: "سارة" };
 
 function resetQuestionRateLimit(): void {
   ["::ffff:127.0.0.1", "::1", "127.0.0.1"].forEach((key) => weeklyLiveQuestionRateLimiter.resetKey(key));
@@ -108,10 +102,11 @@ describe("weekly live API", () => {
     expect(await WeeklyLiveModel.countDocuments({ isVisible: true })).toBe(1);
   });
 
-  it("stores a consented question only for an eligible event and releases its link after persistence", async () => {
+  it("stores a checkbox-free question with an omitted email only for an eligible event and releases its link after persistence", async () => {
     const live = await WeeklyLiveModel.create({ ...liveInput, timezone: "Asia/Riyadh" });
     const current = await request(app).get("/api/weekly-live/current");
-    const submission = await request(app).post(`/api/weekly-live/${live.id}/questions`).send(questionInput);
+    const { email: _email, ...questionWithoutEmail } = questionInput;
+    const submission = await request(app).post(`/api/weekly-live/${live.id}/questions`).send(questionWithoutEmail);
     const stored = await WeeklyLiveQuestionModel.findById(submission.body.submissionId).lean();
     const lead = stored?.leadId ? await LeadModel.findById(stored.leadId).lean() : null;
 
@@ -121,10 +116,11 @@ describe("weekly live API", () => {
     expect(JSON.stringify(current.body)).not.toContain("questions");
     expect(submission.status).toBe(201);
     expect(submission.body.joinUrl).toBe(liveInput.meetingUrl);
-    expect(stored).toMatchObject({ weeklyLiveId: live._id, status: "new", privacyNoticeVersion: "weekly-live-v1" });
+    expect(stored).toMatchObject({ weeklyLiveId: live._id, displayName: "سارة", status: "new", privacyNoticeVersion: "weekly-live-v1" });
     expect(stored?.consentAt).toBeInstanceOf(Date);
     expect(stored).not.toHaveProperty("meetingUrl");
-    expect(lead).toMatchObject({ source: "weekly_live", marketingConsent: false, marketingConsentAt: null, contact: { name: questionInput.contactName, phone: "0501234567", email: questionInput.email }, location: { region: questionInput.region, city: questionInput.city } });
+    expect(lead).toMatchObject({ source: "weekly_live", marketingConsent: false, marketingConsentAt: null, contact: { name: questionInput.contactName, phone: "0501234567" }, location: { region: questionInput.region, city: questionInput.city } });
+    expect(lead?.contact.email).toBeUndefined();
     expect(lead?.attribution).toMatchObject({ utmSource: "paid", utmCampaign: "weekly-october", landingPath: "/weekly-live", clickIds: { fbclid: "safe-click" } });
     expect(lead).not.toHaveProperty("age");
     expect(lead).not.toHaveProperty("question");
@@ -143,11 +139,11 @@ describe("weekly live API", () => {
     expect(await LeadModel.countDocuments({})).toBe(0);
   });
 
-  it("rejects missing consent, unsupported data, invalid ages, hidden events, and closed events", async () => {
+  it("rejects invalid non-empty email, unsupported data, invalid ages, hidden events, and closed events", async () => {
     const visible = await WeeklyLiveModel.create({ ...liveInput, timezone: "Asia/Riyadh" });
     const hidden = await WeeklyLiveModel.create({ ...liveInput, title: "Hidden", isVisible: false, timezone: "Asia/Riyadh" });
     const closed = await WeeklyLiveModel.create({ ...liveInput, title: "Closed", isVisible: true, acceptingQuestions: false, timezone: "Asia/Riyadh" });
-    const missingConsent = await request(app).post(`/api/weekly-live/${visible.id}/questions`).send({ ...questionInput, consent: false });
+    const invalidEmail = await request(app).post(`/api/weekly-live/${visible.id}/questions`).send({ ...questionInput, email: "invalid-email" });
     resetQuestionRateLimit();
     const unsupported = await request(app).post(`/api/weekly-live/${visible.id}/questions`).send({ ...questionInput, meetingUrl: liveInput.meetingUrl });
     resetQuestionRateLimit();
@@ -158,7 +154,7 @@ describe("weekly live API", () => {
     const hiddenResponse = await request(app).post(`/api/weekly-live/${hidden.id}/questions`).send(questionInput);
     resetQuestionRateLimit();
     const closedResponse = await request(app).post(`/api/weekly-live/${closed.id}/questions`).send(questionInput);
-    expect(missingConsent.status).toBe(400);
+    expect(invalidEmail.status).toBe(400);
     expect(unsupported.status).toBe(400);
     expect(invalidAge.status).toBe(400);
     expect(invalidId.status).toBe(400);
@@ -167,11 +163,11 @@ describe("weekly live API", () => {
     expect(await LeadModel.countDocuments({})).toBe(0);
   });
 
-  it("requires Lead privacy acknowledgement while allowing optional marketing consent", async () => {
+  it("requires no client consent fields, accepts a valid email, and never silently enables marketing", async () => {
     const live = await WeeklyLiveModel.create({ ...liveInput, timezone: "Asia/Riyadh" });
-    const rejected = await request(app).post("/api/weekly-live/" + live.id + "/questions").send({ ...questionInput, privacyNoticeAccepted: false });
+    const rejected = await request(app).post("/api/weekly-live/" + live.id + "/questions").send({ ...questionInput, marketingConsent: true });
     resetQuestionRateLimit();
-    const accepted = await request(app).post("/api/weekly-live/" + live.id + "/questions").send({ ...questionInput, marketingConsent: true });
+    const accepted = await request(app).post("/api/weekly-live/" + live.id + "/questions").send(questionInput);
     const question = await WeeklyLiveQuestionModel.findById(accepted.body.submissionId).lean();
     const lead = question?.leadId ? await LeadModel.findById(question.leadId).lean() : null;
 
@@ -180,8 +176,9 @@ describe("weekly live API", () => {
     expect(await WeeklyLiveQuestionModel.countDocuments({})).toBe(1);
     expect(accepted.status).toBe(201);
     expect(accepted.body.joinUrl).toBe(liveInput.meetingUrl);
-    expect(lead?.marketingConsent).toBe(true);
-    expect(lead?.marketingConsentAt).toBeInstanceOf(Date);
+    expect(lead?.marketingConsent).toBe(false);
+    expect(lead?.marketingConsentAt).toBeNull();
+    expect(lead?.privacyNoticeAcceptedAt).toBeInstanceOf(Date);
   });
 
   it("lets an Admin paginate, filter, moderate, and delete without rewriting the original question", async () => {

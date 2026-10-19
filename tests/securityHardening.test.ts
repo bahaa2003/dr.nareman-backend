@@ -100,9 +100,7 @@ describe("security hardening", () => {
         .send({
           name,
           phone: "+20101234567",
-          source: "ovulation_calculator",
-          privacyNoticeAccepted: true,
-          marketingConsent: false
+          source: "ovulation_calculator"
         });
 
     expect(app.get("trust proxy")).toBe("loopback");

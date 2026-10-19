@@ -35,7 +35,7 @@ const weeklyLiveQuestionSchema = new Schema<WeeklyLiveQuestion>(
   {
     weeklyLiveId: { type: Schema.Types.ObjectId, required: true, ref: "WeeklyLive", index: true },
     leadId: { type: Schema.Types.ObjectId, ref: "Lead", index: true },
-    displayName: { type: String, required: true, trim: true, minlength: 2, maxlength: 80 },
+    displayName: { type: String, required: true, trim: true, minlength: 1, maxlength: 80 },
     age: { type: Number, required: true, min: 18, max: 100, validate: Number.isInteger },
     region: { type: String, required: true, trim: true, maxlength: 80 },
     city: { type: String, required: true, trim: true, maxlength: 100 },

@@ -43,12 +43,32 @@ const leadAttributionSchema = new Schema(
   { _id: false, id: false, strict: "throw" }
 );
 
+const ovulationCalculatorHealthContextSchema = new Schema(
+  {
+    lastPeriodStart: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/u },
+    cycleLength: { type: Number, required: true, min: 21, max: 35, validate: Number.isInteger },
+    estimatedOvulation: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/u },
+    fertileWindowStart: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/u },
+    fertileWindowEnd: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/u },
+    estimatedNextPeriod: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/u },
+    calculatedAt: { type: Date, required: true },
+    calculationVersion: { type: String, required: true, enum: ["v1"] }
+  },
+  { _id: false, id: false, strict: "throw" }
+);
+
+const leadHealthContextSchema = new Schema(
+  { ovulationCalculator: { type: ovulationCalculatorHealthContextSchema } },
+  { _id: false, id: false, strict: "throw" }
+);
+
 const leadSchema = new Schema<Lead>(
   {
     contact: { type: leadContactSchema, required: true },
     location: { type: leadLocationSchema },
     source: { type: String, required: true, enum: leadSources },
     attribution: { type: leadAttributionSchema },
+    healthContext: { type: leadHealthContextSchema },
     privacyNoticeAcceptedAt: { type: Date, required: true },
     marketingConsent: { type: Boolean, required: true, default: false },
     marketingConsentAt: { type: Date, default: null },

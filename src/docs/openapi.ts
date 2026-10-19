@@ -979,18 +979,18 @@ export const openApiDocument = {
       },
       AdminLead: {
         type: "object", additionalProperties: false,
-        required: ["id", "contact", "location", "source", "attribution", "privacyNoticeAcceptedAt", "marketingConsent", "marketingConsentAt", "status", "createdAt", "updatedAt"],
+        required: ["id", "contact", "location", "source", "attribution", "healthContext", "privacyNoticeAcceptedAt", "marketingConsent", "marketingConsentAt", "status", "createdAt", "updatedAt"],
         properties: {
           id: { type: "string" },
           contact: { type: "object", additionalProperties: false, required: ["name", "phone", "email"], properties: { name: { type: "string", maxLength: 100 }, phone: { type: "string", maxLength: 16 }, email: { type: ["string", "null"], format: "email" } } },
           location: { type: "object", additionalProperties: false, required: ["region", "city"], properties: { region: { type: ["string", "null"] }, city: { type: ["string", "null"] } } },
-          source: { $ref: "#/components/schemas/LeadSource" }, attribution: { $ref: "#/components/schemas/LeadAttribution" }, privacyNoticeAcceptedAt: { type: "string", format: "date-time" }, marketingConsent: { type: "boolean" }, marketingConsentAt: { type: ["string", "null"], format: "date-time" }, status: { $ref: "#/components/schemas/LeadStatus" }, createdAt: { type: "string", format: "date-time" }, updatedAt: { type: "string", format: "date-time" }
+          source: { $ref: "#/components/schemas/LeadSource" }, attribution: { $ref: "#/components/schemas/LeadAttribution" }, healthContext: { type: "object", additionalProperties: false, required: ["ovulationCalculator"], properties: { ovulationCalculator: { type: ["object", "null"], additionalProperties: false, required: ["lastPeriodStart", "cycleLength", "estimatedOvulation", "fertileWindowStart", "fertileWindowEnd", "estimatedNextPeriod", "calculatedAt", "calculationVersion"], properties: { lastPeriodStart: { type: "string", format: "date" }, cycleLength: { type: "integer" }, estimatedOvulation: { type: "string", format: "date" }, fertileWindowStart: { type: "string", format: "date" }, fertileWindowEnd: { type: "string", format: "date" }, estimatedNextPeriod: { type: "string", format: "date" }, calculatedAt: { type: "string", format: "date-time" }, calculationVersion: { type: "string", const: "v1" } } } } }, privacyNoticeAcceptedAt: { type: "string", format: "date-time" }, marketingConsent: { type: "boolean" }, marketingConsentAt: { type: ["string", "null"], format: "date-time" }, status: { $ref: "#/components/schemas/LeadStatus" }, createdAt: { type: "string", format: "date-time" }, updatedAt: { type: "string", format: "date-time" }
         }
       },
       PublicLeadCreateInput: {
-        type: "object", additionalProperties: false, required: ["name", "phone", "source", "privacyNoticeAccepted", "marketingConsent"],
+        type: "object", additionalProperties: false, required: ["name", "phone", "source"],
         properties: {
-          name: { type: "string", minLength: 1, maxLength: 100 }, phone: { type: "string", description: "Digits with optional leading +; Arabic-Indic digits and spaces/parentheses/hyphens are normalized.", maxLength: 60 }, email: { type: "string", format: "email", maxLength: 254 }, region: { type: "string", maxLength: 80 }, city: { type: "string", maxLength: 100 }, source: { $ref: "#/components/schemas/LeadSource" }, privacyNoticeAccepted: { type: "boolean", const: true }, marketingConsent: { type: "boolean" },
+          name: { type: "string", minLength: 1, maxLength: 100 }, phone: { type: "string", description: "Digits with optional leading +; Arabic-Indic digits and spaces/parentheses/hyphens are normalized.", maxLength: 60 }, email: { type: "string", format: "email", maxLength: 254 }, region: { type: "string", maxLength: 80 }, city: { type: "string", maxLength: 100 }, source: { $ref: "#/components/schemas/LeadSource" }, marketingConsent: { type: "boolean", const: false, default: false }, healthContext: { type: "object", additionalProperties: false, required: ["ovulationCalculator"], properties: { ovulationCalculator: { type: "object", additionalProperties: false, required: ["lastPeriodStart", "cycleLength", "estimatedOvulation", "fertileWindowStart", "fertileWindowEnd", "estimatedNextPeriod"], properties: { lastPeriodStart: { type: "string", format: "date" }, cycleLength: { type: "integer", minimum: 21, maximum: 35 }, estimatedOvulation: { type: "string", format: "date" }, fertileWindowStart: { type: "string", format: "date" }, fertileWindowEnd: { type: "string", format: "date" }, estimatedNextPeriod: { type: "string", format: "date" } } } } },
           attribution: { type: "object", additionalProperties: false, properties: { utmSource: { type: "string", maxLength: 200 }, utmMedium: { type: "string", maxLength: 200 }, utmCampaign: { type: "string", maxLength: 200 }, utmContent: { type: "string", maxLength: 200 }, utmTerm: { type: "string", maxLength: 200 }, landingPath: { type: "string", maxLength: 500, description: "Application-relative path only; no query, fragment, protocol, or host." }, referrerHost: { type: "string", maxLength: 253, description: "Hostname only; no scheme, path, query, or credentials." }, clickIds: { type: "object", additionalProperties: false, properties: { gclid: { type: "string", maxLength: 512 }, fbclid: { type: "string", maxLength: 512 }, ttclid: { type: "string", maxLength: 512 }, msclkid: { type: "string", maxLength: 512 } } } } }
         }
       },
@@ -1034,19 +1034,16 @@ export const openApiDocument = {
       AdminTestimonialListResponse: { type: "object", additionalProperties: false, required: ["success", "items", "pagination"], properties: { success: { type: "boolean", const: true }, items: { type: "array", items: { $ref: "#/components/schemas/AdminTestimonial" } }, pagination: { $ref: "#/components/schemas/Pagination" } } },
       PublicTestimonialListResponse: { type: "object", additionalProperties: false, required: ["success", "items"], properties: { success: { type: "boolean", const: true }, items: { type: "array", items: { $ref: "#/components/schemas/PublicTestimonial" } } } },
       PublicWeeklyLiveQuestionInput: {
-        type: "object", additionalProperties: false, required: ["contactName", "phone", "displayName", "age", "region", "city", "question", "consent", "privacyNoticeAccepted", "marketingConsent"],
+        type: "object", additionalProperties: false, required: ["contactName", "phone", "age", "region", "city", "question"],
         properties: {
-          contactName: { type: "string", minLength: 1, maxLength: 100, description: "Lead contact name; not the question display name." },
+          contactName: { type: "string", minLength: 1, maxLength: 100, description: "Lead contact name; the stored question display name is derived from it." },
           phone: { type: "string", maxLength: 60, description: "Digits with optional leading +; Arabic-Indic digits and common punctuation are normalized." },
           email: { type: "string", format: "email", maxLength: 254 },
-          displayName: { type: "string", minLength: 2, maxLength: 80, description: "Question-specific first name or alias." },
           age: { type: "integer", minimum: 18, maximum: 100 },
           region: { type: "string", minLength: 1, maxLength: 80 },
           city: { type: "string", minLength: 1, maxLength: 100 },
           question: { type: "string", minLength: 10, maxLength: 2000 },
-          consent: { type: "boolean", const: true, description: "Question/informational acknowledgement." },
-          privacyNoticeAccepted: { type: "boolean", const: true, description: "Required acknowledgement for Lead contact processing." },
-          marketingConsent: { type: "boolean", description: "Optional; false does not block question submission or join URL release." },
+          marketingConsent: { type: "boolean", const: false, default: false, description: "No marketing opt-in is collected in this flow." },
           attribution: { $ref: "#/components/schemas/PublicLeadCreateInput/properties/attribution" }
         }
       },

@@ -44,14 +44,11 @@ export const publicQuestionSchema = z.strictObject({
   contactName: nonEmptyString(100),
   phone: leadPhoneInputSchema,
   email: leadOptionalEmailSchema.optional(),
-  displayName: z.string().trim().min(2).max(80),
   age: z.number().int().min(18).max(100),
   region: nonEmptyString(80),
   city: nonEmptyString(100),
   question: z.string().trim().min(10).max(2_000),
-  consent: z.literal(true),
-  privacyNoticeAccepted: z.literal(true),
-  marketingConsent: z.boolean(),
+  marketingConsent: z.literal(false).optional().default(false),
   attribution: leadAttributionSchema.optional()
 });
 

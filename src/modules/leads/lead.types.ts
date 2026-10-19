@@ -35,11 +35,27 @@ export interface LeadAttribution {
   clickIds?: LeadClickIds | undefined;
 }
 
+export interface OvulationCalculatorHealthContext {
+  lastPeriodStart: string;
+  cycleLength: number;
+  estimatedOvulation: string;
+  fertileWindowStart: string;
+  fertileWindowEnd: string;
+  estimatedNextPeriod: string;
+  calculatedAt: Date;
+  calculationVersion: "v1";
+}
+
+export interface LeadHealthContext {
+  ovulationCalculator?: OvulationCalculatorHealthContext | undefined;
+}
+
 export interface Lead {
   contact: LeadContact;
   location?: LeadLocation | undefined;
   source: LeadSource;
   attribution?: LeadAttribution | undefined;
+  healthContext?: LeadHealthContext | undefined;
   privacyNoticeAcceptedAt: Date;
   marketingConsent: boolean;
   marketingConsentAt: Date | null;
@@ -66,6 +82,18 @@ export interface SafeAdminLead {
     landingPath: string | null;
     referrerHost: string | null;
     clickIds: { gclid: string | null; fbclid: string | null; ttclid: string | null; msclkid: string | null };
+  };
+  healthContext: {
+    ovulationCalculator: {
+      lastPeriodStart: string;
+      cycleLength: number;
+      estimatedOvulation: string;
+      fertileWindowStart: string;
+      fertileWindowEnd: string;
+      estimatedNextPeriod: string;
+      calculatedAt: string;
+      calculationVersion: "v1";
+    } | null;
   };
   privacyNoticeAcceptedAt: string;
   marketingConsent: boolean;

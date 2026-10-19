@@ -20,11 +20,20 @@ function leadInput(overrides: Record<string, unknown> = {}) {
     name: "مراجعة تجريبية",
     phone: "+20 (010) 123-4567",
     source: "ovulation_calculator",
-    privacyNoticeAccepted: true,
-    marketingConsent: false,
     ...overrides
   };
 }
+
+const ovulationHealthContext = {
+  ovulationCalculator: {
+    lastPeriodStart: "2026-10-01",
+    cycleLength: 28,
+    estimatedOvulation: "2026-10-15",
+    fertileWindowStart: "2026-10-10",
+    fertileWindowEnd: "2026-10-15",
+    estimatedNextPeriod: "2026-10-29"
+  }
+};
 
 async function authenticatedAgent(): Promise<SuperAgentTest> {
   await provisionAdmin({ email: adminEmail, password: adminPassword });
@@ -88,9 +97,16 @@ describe("marketing lead API", () => {
     expect(lead).not.toHaveProperty("diagnosis");
   });
 
-  it("requires privacy notice acceptance and rejects health, client timestamp, and arbitrary-field injection", async () => {
+  it("accepts omitted email and server-records the privacy notice while rejecting invalid client fields", async () => {
+    const accepted = await createPublicLead();
+    expect(accepted.status).toBe(201);
+    const stored = await LeadModel.findById(accepted.body.lead.id).lean();
+    expect(stored?.contact.email).toBeUndefined();
+    expect(stored?.privacyNoticeAcceptedAt).toBeInstanceOf(Date);
+    resetLeadRateLimit();
+
     const invalidInputs = [
-      { privacyNoticeAccepted: false }, { privacyNoticeAcceptedAt: "2020-01-01" }, { question: "private question" },
+      { email: "not-an-email" }, { privacyNoticeAccepted: false }, { privacyNoticeAcceptedAt: "2020-01-01" }, { question: "private question" },
       { diagnosis: "private diagnosis" }, { pregnancyStatus: "private status" },
       { attribution: { landingPath: "https://example.com/path" } }, { attribution: { landingPath: "/calculator?secret=1" } },
       { attribution: { referrerHost: "https://example.com/path" } }, { phone: "++20101234567" }
@@ -99,18 +115,44 @@ describe("marketing lead API", () => {
       expect((await createPublicLead(invalidInput)).status).toBe(400);
       resetLeadRateLimit();
     }
-    expect(await LeadModel.countDocuments()).toBe(0);
+    expect(await LeadModel.countDocuments()).toBe(1);
   });
 
-  it("records marketing consent only when explicitly true and preserves strict schema boundaries", async () => {
-    const response = await createPublicLead({ marketingConsent: true, source: "weekly_live", region: "الرياض", city: "الرياض" });
+  it("does not permit hidden marketing opt-in and preserves strict schema boundaries", async () => {
+    const response = await createPublicLead({ source: "weekly_live", region: "الرياض", city: "الرياض" });
     expect(response.status).toBe(201);
     const lead = await LeadModel.findById(response.body.lead.id).lean();
-    expect(lead?.marketingConsentAt).toBeInstanceOf(Date);
+    expect(lead?.marketingConsent).toBe(false);
+    expect(lead?.marketingConsentAt).toBeNull();
     expect(lead?.privacyNoticeAcceptedAt).toBeInstanceOf(Date);
+    resetLeadRateLimit();
+    expect((await createPublicLead({ marketingConsent: true })).status).toBe(400);
     await expect(LeadModel.create({
       contact: { name: "Test", phone: "+20101234567" }, source: "weekly_live", privacyNoticeAcceptedAt: new Date(), marketingConsent: false, status: "new", treatment: "must fail"
     })).rejects.toThrow();
+  });
+
+  it("persists validated ovulation health context for Admin-only lead access without requiring a migration", async () => {
+    const response = await createPublicLead({ healthContext: ovulationHealthContext });
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual({ success: true, lead: { id: expect.any(String) } });
+    const stored = await LeadModel.findById(response.body.lead.id).lean();
+    expect(stored?.healthContext).toMatchObject({ ovulationCalculator: { ...ovulationHealthContext.ovulationCalculator, calculationVersion: "v1" } });
+    expect(stored?.healthContext?.ovulationCalculator?.calculatedAt).toBeInstanceOf(Date);
+
+    const agent = await authenticatedAgent();
+    const adminDetail = await agent.get(`/api/admin/leads/${response.body.lead.id}`);
+    expect(adminDetail.status).toBe(200);
+    expect(adminDetail.body.lead.healthContext.ovulationCalculator).toMatchObject(ovulationHealthContext.ovulationCalculator);
+    expect(adminDetail.body.lead.healthContext.ovulationCalculator.calculatedAt).toEqual(expect.any(String));
+    expect(JSON.stringify(response.body)).not.toContain("healthContext");
+
+    const legacy = await LeadModel.create({
+      contact: { name: "سجل قديم", phone: "+20101234567" }, source: "weekly_live", privacyNoticeAcceptedAt: new Date(), marketingConsent: false, marketingConsentAt: null, status: "new"
+    });
+    const legacyDetail = await agent.get(`/api/admin/leads/${legacy.id}`);
+    expect(legacyDetail.status).toBe(200);
+    expect(legacyDetail.body.lead.healthContext.ovulationCalculator).toBeNull();
   });
 
   it("accepts normal local and international phone forms, rejects unsafe forms, and rate-limits anonymous capture", async () => {
@@ -142,13 +184,13 @@ describe("marketing lead API", () => {
   });
 
   it("lists, filters, fetches, updates only status, and deletes leads through protected Admin routes", async () => {
-    const first = await createPublicLead({ source: "weekly_live", marketingConsent: true, attribution: { utmCampaign: "launch" } });
-    const second = await createPublicLead({ source: "ovulation_calculator", marketingConsent: false, attribution: { utmCampaign: "other" } });
+    const first = await createPublicLead({ source: "weekly_live", attribution: { utmCampaign: "launch" } });
+    const second = await createPublicLead({ source: "ovulation_calculator", attribution: { utmCampaign: "other" } });
     const agent = await authenticatedAgent();
-    const list = await agent.get("/api/admin/leads?source=weekly_live&marketingConsent=true&utmCampaign=launch");
+    const list = await agent.get("/api/admin/leads?source=weekly_live&marketingConsent=false&utmCampaign=launch");
     expect(list.status).toBe(200);
     expect(list.body.items).toHaveLength(1);
-    expect(list.body.items[0]).toMatchObject({ id: first.body.lead.id, source: "weekly_live", marketingConsent: true, status: "new" });
+    expect(list.body.items[0]).toMatchObject({ id: first.body.lead.id, source: "weekly_live", marketingConsent: false, status: "new" });
     expect(list.body.items[0]).not.toHaveProperty("_id");
     expect(list.body.items[0]).not.toHaveProperty("contact.password");
 
