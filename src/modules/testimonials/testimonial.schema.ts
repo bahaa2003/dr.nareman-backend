@@ -2,7 +2,6 @@ import { isValidObjectId } from "mongoose";
 import { z } from "zod";
 
 const nonEmptyString = (maximumLength: number) => z.string().trim().min(1).max(maximumLength);
-const explicitTrue = z.union([z.literal("true"), z.literal(true)]).transform(() => true);
 const positiveIntegerQuery = (maximum: number) =>
   z.string().regex(/^[1-9]\d*$/, "Must be a positive integer").transform(Number).pipe(z.number().int().min(1).max(maximum));
 
@@ -11,9 +10,7 @@ export const testimonialIdParamsSchema = z.strictObject({
 });
 
 export const testimonialUploadSchema = z.strictObject({
-  alt: nonEmptyString(160),
-  privacyConfirmed: explicitTrue,
-  publicationApproved: explicitTrue
+  alt: nonEmptyString(160)
 });
 
 export const testimonialUpdateSchema = z

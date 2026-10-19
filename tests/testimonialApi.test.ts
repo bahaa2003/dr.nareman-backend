@@ -35,8 +35,6 @@ async function makeImage(format: "jpeg" | "png" | "webp", width = 72, height = 1
 async function upload(agent: SuperAgentTest, format: "jpeg" | "png" | "webp" = "jpeg") {
   return agent.post("/api/admin/testimonials")
     .field("alt", "رسالة شكر من إحدى المراجعات")
-    .field("privacyConfirmed", "true")
-    .field("publicationApproved", "true")
     .attach("image", await makeImage(format), `private-name.${format === "jpeg" ? "jpg" : format}`);
 }
 
@@ -85,6 +83,8 @@ describe("testimonial screenshot API", () => {
       const response = await upload(agent, format);
       expect(response.status).toBe(201);
       expect(response.body.testimonial).toMatchObject({ isVisible: false, image: { alt: "رسالة شكر من إحدى المراجعات" } });
+      expect(response.body.testimonial.privacyConfirmedAt).toEqual(expect.any(String));
+      expect(response.body.testimonial.publicationApprovedAt).toEqual(expect.any(String));
       expect(response.body.testimonial.image.url).toMatch(/^\/uploads\/testimonials\/[0-9a-f-]{36}\.webp$/);
       expect(response.body.testimonial.image.url).not.toContain("private-name");
       expect(response.body.testimonial).not.toHaveProperty("_id");
@@ -93,18 +93,17 @@ describe("testimonial screenshot API", () => {
     }
   });
 
-  it("requires both explicit attestations before writing any media and rejects invalid image uploads", async () => {
+  it("uses the authenticated admin upload action as the attestation and rejects deprecated checkbox fields or invalid uploads", async () => {
     const agent = await authenticatedAgent();
     const image = await makeImage("jpeg");
     const responses = [
+      await agent.post("/api/admin/testimonials").field("alt", "Alt").field("privacyConfirmed", "true").attach("image", image, "a.jpg"),
       await agent.post("/api/admin/testimonials").field("alt", "Alt").field("publicationApproved", "true").attach("image", image, "a.jpg"),
-      await agent.post("/api/admin/testimonials").field("alt", "Alt").field("privacyConfirmed", "false").field("publicationApproved", "true").attach("image", image, "a.jpg"),
-      await agent.post("/api/admin/testimonials").field("alt", "Alt").field("privacyConfirmed", "true").field("publicationApproved", "false").attach("image", image, "a.jpg"),
-      await agent.post("/api/admin/testimonials").field("alt", "Alt").field("privacyConfirmed", "true").field("publicationApproved", "true").attach("image", Buffer.from("not an image"), "fake.jpg"),
-      await agent.post("/api/admin/testimonials").field("alt", "Alt").field("privacyConfirmed", "true").field("publicationApproved", "true").attach("image", Buffer.from("<svg></svg>"), "vector.svg"),
-      await agent.post("/api/admin/testimonials").field("alt", "Alt").field("privacyConfirmed", "true").field("publicationApproved", "true").field("privacyConfirmedAt", "2020-01-01").attach("image", image, "a.jpg"),
-      await agent.post("/api/admin/testimonials").field("alt", "Alt").field("privacyConfirmed", "true").field("publicationApproved", "true"),
-      await agent.post("/api/admin/testimonials").field("alt", "Alt").field("privacyConfirmed", "true").field("publicationApproved", "true").attach("unexpected", image, "a.jpg")
+      await agent.post("/api/admin/testimonials").field("alt", "Alt").field("privacyConfirmedAt", "2020-01-01").attach("image", image, "a.jpg"),
+      await agent.post("/api/admin/testimonials").field("alt", "Alt").attach("image", Buffer.from("not an image"), "fake.jpg"),
+      await agent.post("/api/admin/testimonials").field("alt", "Alt").attach("image", Buffer.from("<svg></svg>"), "vector.svg"),
+      await agent.post("/api/admin/testimonials").field("alt", "Alt"),
+      await agent.post("/api/admin/testimonials").field("alt", "Alt").attach("unexpected", image, "a.jpg")
     ];
     responses.forEach((response) => expect([400, 415]).toContain(response.status));
     expect(await TestimonialModel.countDocuments()).toBe(0);
@@ -119,8 +118,6 @@ describe("testimonial screenshot API", () => {
       .toBuffer();
     const response = await agent.post("/api/admin/testimonials")
       .field("alt", "رسالة شكر من إحدى المراجعات")
-      .field("privacyConfirmed", "true")
-      .field("publicationApproved", "true")
       .attach("image", source, "screenshot.jpg");
 
     expect(response.status).toBe(201);
@@ -134,7 +131,7 @@ describe("testimonial screenshot API", () => {
     const second = await upload(agent, "png");
     const firstId = first.body.testimonial.id as string;
     const secondId = second.body.testimonial.id as string;
-    const oversized = await agent.post("/api/admin/testimonials").field("alt", "Alt").field("privacyConfirmed", "true").field("publicationApproved", "true").attach("image", Buffer.alloc(5 * 1024 * 1024 + 1), "large.jpg");
+    const oversized = await agent.post("/api/admin/testimonials").field("alt", "Alt").attach("image", Buffer.alloc(5 * 1024 * 1024 + 1), "large.jpg");
     const injected = await agent.patch(`/api/admin/testimonials/${firstId}`).send({ "image.url": "/uploads/articles/x.webp" });
     const blankAlt = await agent.patch(`/api/admin/testimonials/${firstId}`).send({ alt: "  " });
     const longAlt = await agent.patch(`/api/admin/testimonials/${firstId}`).send({ alt: "x".repeat(161) });
@@ -154,16 +151,16 @@ describe("testimonial screenshot API", () => {
     expect(visible.body.items[0]).not.toHaveProperty("sortOrder");
   });
 
-  it("replaces only after confirmations, preserves safe visibility, and cleans the previous file after persistence", async () => {
+  it("uses the authenticated replacement action as the attestation, preserves safe visibility, and cleans the previous file after persistence", async () => {
     const agent = await authenticatedAgent();
     const created = await upload(agent);
     const id = created.body.testimonial.id as string;
     const oldUrl = created.body.testimonial.image.url as string;
     await agent.patch(`/api/admin/testimonials/${id}`).send({ isVisible: true });
-    const missingAttestation = await agent.put(`/api/admin/testimonials/${id}/image`).field("alt", "Replacement").field("privacyConfirmed", "true").attach("image", await makeImage("png"), "replacement.png");
-    const replacement = await agent.put(`/api/admin/testimonials/${id}/image`).field("alt", "Replacement").field("privacyConfirmed", "true").field("publicationApproved", "true").attach("image", await makeImage("png"), "replacement.png");
+    const deprecatedCheckboxField = await agent.put(`/api/admin/testimonials/${id}/image`).field("alt", "Replacement").field("privacyConfirmed", "true").attach("image", await makeImage("png"), "replacement.png");
+    const replacement = await agent.put(`/api/admin/testimonials/${id}/image`).field("alt", "Replacement").attach("image", await makeImage("png"), "replacement.png");
 
-    expect(missingAttestation.status).toBe(400);
+    expect(deprecatedCheckboxField.status).toBe(400);
     expect(replacement.status).toBe(200);
     expect(replacement.body.testimonial.isVisible).toBe(true);
     expect(replacement.body.testimonial.image.url).not.toBe(oldUrl);
@@ -188,7 +185,7 @@ describe("testimonial screenshot API", () => {
     const id = created.body.testimonial.id as string;
     const oldUrl = created.body.testimonial.image.url as string;
     vi.spyOn(TestimonialModel.prototype, "save").mockRejectedValueOnce(new Error("database unavailable"));
-    const response = await agent.put(`/api/admin/testimonials/${id}/image`).field("alt", "Replacement").field("privacyConfirmed", "true").field("publicationApproved", "true").attach("image", await makeImage("png"), "replacement.png");
+    const response = await agent.put(`/api/admin/testimonials/${id}/image`).field("alt", "Replacement").attach("image", await makeImage("png"), "replacement.png");
 
     expect(response.status).toBe(500);
     expect((await TestimonialModel.findById(id))?.image.url).toBe(oldUrl);
@@ -201,7 +198,7 @@ describe("testimonial screenshot API", () => {
     const id = created.body.testimonial.id as string;
     const oldUrl = created.body.testimonial.image.url as string;
     vi.spyOn(localMediaStorage, "deleteTestimonial").mockRejectedValueOnce(new Error("cleanup unavailable"));
-    const response = await agent.put(`/api/admin/testimonials/${id}/image`).field("alt", "Replacement").field("privacyConfirmed", "true").field("publicationApproved", "true").attach("image", await makeImage("png"), "replacement.png");
+    const response = await agent.put(`/api/admin/testimonials/${id}/image`).field("alt", "Replacement").attach("image", await makeImage("png"), "replacement.png");
 
     expect(response.status).toBe(200);
     expect(response.body.testimonial.image.url).not.toBe(oldUrl);

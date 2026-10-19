@@ -544,9 +544,9 @@ export const openApiDocument = {
       },
       post: {
         tags: ["Admin Testimonials"], operationId: "createAdminTestimonial", summary: "Upload a publication-safe testimonial screenshot", security: adminSecurity,
-        description: "Requires explicit privacy and publication attestations. JPEG, PNG, and WebP up to 5 MB are decoded, metadata-stripped, and stored as generated WebP. New records are always hidden.",
+        description: "The authenticated Admin upload action records server-side privacy and publication review timestamps. JPEG, PNG, and WebP up to 5 MB are decoded, metadata-stripped, and stored as generated WebP. New records are always hidden.",
         requestBody: { required: true, content: { "multipart/form-data": { schema: { $ref: "#/components/schemas/TestimonialUploadInput" } } } },
-        responses: { "201": { description: "Hidden testimonial created.", content: { "application/json": { schema: { $ref: "#/components/schemas/AdminTestimonialResponse" } } } }, "400": errorResponse("Missing image, attestation, or invalid multipart fields."), "401": errorResponse("Missing or invalid Admin session."), "403": errorResponse("Untrusted browser Origin."), "413": errorResponse("Image exceeds 5 MB."), "415": errorResponse("Unsupported or invalid image."), ...internalServerError }
+        responses: { "201": { description: "Hidden testimonial created.", content: { "application/json": { schema: { $ref: "#/components/schemas/AdminTestimonialResponse" } } } }, "400": errorResponse("Missing image or invalid multipart fields."), "401": errorResponse("Missing or invalid Admin session."), "403": errorResponse("Untrusted browser Origin."), "413": errorResponse("Image exceeds 5 MB."), "415": errorResponse("Unsupported or invalid image."), ...internalServerError }
       }
     },
     "/api/admin/testimonials/{id}": {
@@ -555,7 +555,7 @@ export const openApiDocument = {
       delete: { tags: ["Admin Testimonials"], operationId: "deleteAdminTestimonial", summary: "Delete a testimonial screenshot", security: adminSecurity, parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", pattern: "^[a-fA-F0-9]{24}$" } }], responses: { "204": { description: "Record deleted; managed media cleanup is attempted afterwards." }, "400": errorResponse("Invalid id."), "401": errorResponse("Missing or invalid Admin session."), "403": errorResponse("Untrusted browser Origin."), "404": errorResponse("Testimonial not found."), ...internalServerError } }
     },
     "/api/admin/testimonials/{id}/image": {
-      put: { tags: ["Admin Testimonials"], operationId: "replaceAdminTestimonialImage", summary: "Replace a testimonial screenshot", security: adminSecurity, description: "Requires both attestations again. New media is persisted before the database reference changes; prior managed media is cleaned only after successful persistence.", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", pattern: "^[a-fA-F0-9]{24}$" } }], requestBody: { required: true, content: { "multipart/form-data": { schema: { $ref: "#/components/schemas/TestimonialUploadInput" } } } }, responses: { "200": { description: "Updated testimonial.", content: { "application/json": { schema: { $ref: "#/components/schemas/AdminTestimonialResponse" } } } }, "400": errorResponse("Invalid id, file, or attestations."), "401": errorResponse("Missing or invalid Admin session."), "403": errorResponse("Untrusted browser Origin."), "404": errorResponse("Testimonial not found."), "413": errorResponse("Image exceeds 5 MB."), "415": errorResponse("Unsupported or invalid image."), ...internalServerError } }
+      put: { tags: ["Admin Testimonials"], operationId: "replaceAdminTestimonialImage", summary: "Replace a testimonial screenshot", security: adminSecurity, description: "The authenticated Admin replacement action records fresh server-side privacy and publication review timestamps. New media is persisted before the database reference changes; prior managed media is cleaned only after successful persistence.", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", pattern: "^[a-fA-F0-9]{24}$" } }], requestBody: { required: true, content: { "multipart/form-data": { schema: { $ref: "#/components/schemas/TestimonialUploadInput" } } } }, responses: { "200": { description: "Updated testimonial.", content: { "application/json": { schema: { $ref: "#/components/schemas/AdminTestimonialResponse" } } } }, "400": errorResponse("Invalid id or file."), "401": errorResponse("Missing or invalid Admin session."), "403": errorResponse("Untrusted browser Origin."), "404": errorResponse("Testimonial not found."), "413": errorResponse("Image exceeds 5 MB."), "415": errorResponse("Unsupported or invalid image."), ...internalServerError } }
     },
     "/api/leads": {
       post: {
@@ -1023,8 +1023,8 @@ export const openApiDocument = {
         properties: { id: { type: "string" }, image: { $ref: "#/components/schemas/TestimonialImage" } }
       },
       TestimonialUploadInput: {
-        type: "object", additionalProperties: false, required: ["image", "alt", "privacyConfirmed", "publicationApproved"],
-        properties: { image: { type: "string", format: "binary", description: "JPEG, PNG, or WebP, maximum 5 MB. SVG, GIF, invalid files, and original filenames are not retained." }, alt: { type: "string", minLength: 1, maxLength: 160 }, privacyConfirmed: { type: "boolean", const: true, description: "Admin attests identifying details have been removed or obscured as appropriate." }, publicationApproved: { type: "boolean", const: true, description: "Admin attests this publication copy is approved/permitted for public use." } }
+        type: "object", additionalProperties: false, required: ["image", "alt"],
+        properties: { image: { type: "string", format: "binary", description: "JPEG, PNG, or WebP, maximum 5 MB. SVG, GIF, invalid files, and original filenames are not retained." }, alt: { type: "string", minLength: 1, maxLength: 160 } }
       },
       TestimonialUpdateInput: {
         type: "object", additionalProperties: false, minProperties: 1,
